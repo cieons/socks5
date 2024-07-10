@@ -30,6 +30,7 @@ func (s *Server) handleCmdConnect(conn net.Conn, remoteAddr string) {
 		return
 	}
 	defer remoteConn.Close()
+	s.logger.Debug().Str("destination", remoteConn.RemoteAddr().String()).Msg("proxy connection established")
 
 	//send request reply first
 	_, err = conn.Write(s.reply(proto.RepSuccess, conn.LocalAddr()).Bytes())
@@ -40,9 +41,10 @@ func (s *Server) handleCmdConnect(conn net.Conn, remoteAddr string) {
 
 	// start to relay data
 	s.logger.Debug().Fields(map[string]any{
-		"local":  conn.LocalAddr().String(),
-		"remote": remoteConn.RemoteAddr().String(),
-	}).Msg("start proxying data")
+		"client":          conn.RemoteAddr().String(),
+		"destination":     remoteConn.RemoteAddr().String(),
+		"raw_destination": remoteAddr,
+	}).Msg("proxying data")
 	s.proxy(remoteConn, conn)
 }
 

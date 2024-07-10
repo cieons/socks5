@@ -16,8 +16,6 @@ type Server struct {
 	debug         bool
 	logger        zerolog.Logger
 	supportedCmd  []byte
-
-	addr net.Addr
 }
 
 type NewServerOption func(s *Server)
@@ -81,12 +79,13 @@ func (s *Server) Shutdown() {
 
 func (s *Server) handleConn(conn net.Conn) {
 	defer func() {
+		s.logger.Debug().Str("remote", conn.RemoteAddr().String()).Msg("close connection")
 		_ = conn.Close()
 	}()
 
 	negotiateReq, err := s.parseNegotiateRequest(conn)
 	if err != nil {
-		s.logger.Debug().Err(err).Msg("invalid negotiate request, close connection")
+		s.logger.Debug().Err(err).Msg("invalid negotiate request")
 		return
 	}
 
@@ -102,18 +101,18 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	s.logger.Debug().Bytes("auth method", []byte{replyMethod}).Msg("negotiate reply success")
+	s.logger.Debug().Hex("auth method", []byte{replyMethod}).Msg("negotiate reply success")
 
 	// no need to continue if not supported
 	if replyMethod == proto.AuthMethodNotSupport {
-		s.logger.Debug().Msg("auth method not supported, close connection")
+		s.logger.Debug().Msg("auth method not supported")
 		return
 	}
 
 	// todo authenticate log
 	err = s.authenticator.Authenticate(conn)
 	if err != nil {
-		s.logger.Debug().Err(err).Msg("authenticate failed, close connection")
+		s.logger.Debug().Err(err).Msg("authenticate failed")
 		return
 	}
 
@@ -123,7 +122,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 	if req.Ver != proto.VersionSocks5 {
-		s.logger.Debug().Err(proto.ErrInvalidSocksVersion).Msg("invalid request, close connection")
+		s.logger.Debug().Err(proto.ErrInvalidSocksVersion).Msg("invalid request")
 		return
 	}
 	var support bool
