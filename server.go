@@ -52,8 +52,6 @@ func (s *Server) Run(addr string) error {
 	}
 	s.logger.Info().Str("addr", addr).Msg("server start")
 
-	s.addr = listener.Addr()
-
 	defer func() {
 		_ = listener.Close()
 	}()
@@ -166,20 +164,6 @@ func (s *Server) handleRequest(conn net.Conn, req *proto.Request) {
 			s.logger.Err(err).Msg("write reply failed")
 			return
 		}
-	}
-}
-
-// aTyp return the type of server bind address
-func (s *Server) aTyp() byte {
-	serverAddr, _, _ := net.SplitHostPort(s.addr.String())
-	if ip := net.ParseIP(serverAddr); ip != nil {
-		if ip.To4() != nil {
-			return proto.ATypIPv4
-		} else {
-			return proto.ATypIPv6
-		}
-	} else {
-		return proto.ATypDomain
 	}
 }
 
