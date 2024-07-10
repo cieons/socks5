@@ -5,39 +5,8 @@ import (
 	"io"
 )
 
-/*
-NegotiateRequest
-+----+----------+----------+
-|VER | NMETHODS | METHODS  |
-+----+----------+----------+
-| 1  |    1     | 1 to 255 |
-+----+----------+----------+
-
-  - VER: MUST BE 0x01
-
-NegotiateReply
-+----+--------+
-|VER | METHOD |
-+----+--------+
-| 1  |   1    |
-+----+--------+
-*/
-
-type (
-	NegotiateRequest struct {
-		Ver      byte
-		NMethods byte
-		Methods  []byte
-	}
-
-	NegotiateReply struct {
-		Ver    byte
-		Method byte
-	}
-)
-
-func newNegotiateRequest(r io.Reader) (*NegotiateRequest, error) {
-	req := new(NegotiateRequest)
+func (s *Server) parseNegotiateRequest(r io.Reader) (*proto.NegotiateRequest, error) {
+	req := new(proto.NegotiateRequest)
 
 	tmp := make([]byte, 2)
 	_, err := io.ReadFull(r, tmp)
@@ -56,18 +25,14 @@ func newNegotiateRequest(r io.Reader) (*NegotiateRequest, error) {
 	return req, nil
 }
 
-func newNegotiateReply(method byte) *NegotiateReply {
-	return &NegotiateReply{
+func (s *Server) negotiateReply(method byte) *proto.NegotiateReply {
+	return &proto.NegotiateReply{
 		Ver:    proto.VersionSocks5,
 		Method: method,
 	}
 }
 
-func (np *NegotiateReply) Bytes() []byte {
-	return []byte{np.Ver, np.Method}
-}
-
-func (s *Server) chooseAuthMethod(req *NegotiateRequest) (byte, error) {
+func (s *Server) chooseAuthMethod(req *proto.NegotiateRequest) (byte, error) {
 
 	if req.Ver != proto.VersionSocks5 {
 		return 0xff, proto.ErrInvalidSocksVersion

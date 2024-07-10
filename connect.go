@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-func (s *Server) handleConnect(conn net.Conn, remoteAddr *Address) {
+func (s *Server) handleCmdConnect(conn net.Conn, remoteAddr string) {
 	var remoteConn net.Conn
 	var err error
 
-	remoteConn, err = net.Dial("tcp", remoteAddr.Addr())
+	remoteConn, err = net.Dial("tcp", remoteAddr)
 	if err != nil {
 		msg := err.Error()
 		resp := proto.RepHostUnreachable
@@ -22,7 +22,7 @@ func (s *Server) handleConnect(conn net.Conn, remoteAddr *Address) {
 		}
 		s.logger.Debug().Err(err).Msg("dial remote failed")
 
-		_, err = conn.Write(newRequestReply(resp, remoteAddr.ATyp, nil).Bytes())
+		_, err = conn.Write(s.reply(resp, nil).Bytes())
 		if err != nil {
 			s.logger.Err(err).Msg("write reply failed")
 		}
@@ -32,13 +32,17 @@ func (s *Server) handleConnect(conn net.Conn, remoteAddr *Address) {
 	defer remoteConn.Close()
 
 	//send request reply first
-	_, err = conn.Write(newRequestReply(proto.RepSuccess, proto.ATypIPv4, remoteConn.LocalAddr()).Bytes())
+	_, err = conn.Write(s.reply(proto.RepSuccess, conn.LocalAddr()).Bytes())
 	if err != nil {
 		s.logger.Err(err).Msg("write reply failed")
 		return
 	}
 
 	// start to relay data
+	s.logger.Debug().Fields(map[string]any{
+		"local":  conn.LocalAddr().String(),
+		"remote": remoteConn.RemoteAddr().String(),
+	}).Msg("start proxying data")
 	s.proxy(remoteConn, conn)
 }
 

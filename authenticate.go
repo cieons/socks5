@@ -20,64 +20,26 @@ func (a *NoneAuthenticator) Method() byte {
 	return proto.AuthMethodNone
 }
 
-/*
-UserPassAuthRequest
-+----+------+----------+------+----------+
-|VER | ULEN |  UNAME   | PLEN |  PASSWD  |
-+----+------+----------+------+----------+
-| 1  |  1   | 1 to 255 |  1   | 1 to 255 |
-+----+------+----------+------+----------+
-  - VER: should be 0x01
-
-
-
-UserPassAuthReply
-+----+--------+
-|VER | STATUS |
-+----+--------+
-| 1  |   1    |
-+----+--------+
-Status 0x00 means success
-
-*/
-
 type (
 	UserPassAuthenticator struct {
 		credential map[string]string
 	}
-
-	UserPassAuthRequest struct {
-		Ver    byte
-		ULen   byte
-		UName  []byte
-		PLen   byte
-		Passwd []byte
-	}
-
-	UserPassAuthReply struct {
-		Ver    byte
-		Status byte
-	}
 )
 
-func newUserPassAuthReply(success bool) *UserPassAuthReply {
+func (a *UserPassAuthenticator) reply(success bool) *proto.UserPassAuthReply {
 	var status byte = 0xff
 	if success {
 		status = 0x00
 	}
 
-	return &UserPassAuthReply{
+	return &proto.UserPassAuthReply{
 		Ver:    proto.AuthMethodUserPassVer,
 		Status: status,
 	}
 }
 
-func (r *UserPassAuthReply) Bytes() []byte {
-	return []byte{r.Ver, r.Status}
-}
-
 func (a *UserPassAuthenticator) Authenticate(r io.ReadWriter) error {
-	req := new(UserPassAuthRequest)
+	req := new(proto.UserPassAuthRequest)
 
 	tmp := make([]byte, 2)
 	if _, err := io.ReadFull(r, tmp); err != nil {
@@ -115,7 +77,7 @@ func (a *UserPassAuthenticator) Authenticate(r io.ReadWriter) error {
 
 	success := ok && pass == string(req.Passwd)
 
-	var reply = newUserPassAuthReply(success)
+	var reply = a.reply(success)
 	_, err := r.Write(reply.Bytes())
 	if err != nil {
 		return err

@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"io"
 	"net"
 )
 
@@ -17,6 +16,8 @@ type Server struct {
 	debug         bool
 	logger        zerolog.Logger
 	supportedCmd  []byte
+
+	addr net.Addr
 }
 
 type NewServerOption func(s *Server)
@@ -33,11 +34,12 @@ func NewServer(opts ...NewServerOption) *Server {
 		opt(srv)
 	}
 
-	var lr io.Writer = nil
 	if srv.debug {
-		lr = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.StampMilli}
+		srv.logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.StampMilli}).
+			With().Caller().Timestamp().Logger().Level(zerolog.DebugLevel)
+	} else {
+		srv.logger = zerolog.New(nil)
 	}
-	srv.logger = zerolog.New(lr).With().Caller().Timestamp().Logger().Level(zerolog.DebugLevel)
 
 	return srv
 }
@@ -49,6 +51,8 @@ func (s *Server) Run(addr string) error {
 		return err
 	}
 	s.logger.Info().Str("addr", addr).Msg("server start")
+
+	s.addr = listener.Addr()
 
 	defer func() {
 		_ = listener.Close()
@@ -82,7 +86,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		_ = conn.Close()
 	}()
 
-	negotiateReq, err := newNegotiateRequest(conn)
+	negotiateReq, err := s.parseNegotiateRequest(conn)
 	if err != nil {
 		s.logger.Debug().Err(err).Msg("invalid negotiate request, close connection")
 		return
@@ -94,8 +98,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	reply := newNegotiateReply(replyMethod)
-	_, err = conn.Write(reply.Bytes())
+	_, err = conn.Write(s.negotiateReply(replyMethod).Bytes())
 	if err != nil {
 		s.logger.Err(err).Msg("write negotiate reply failed")
 		return
@@ -116,7 +119,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	req, err := newRequest(conn)
+	req, err := s.parseRequest(conn)
 	if err != nil {
 		s.logger.Debug().Err(err).Msg("parse client request failed")
 		return
@@ -134,18 +137,16 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 	if !support {
 		s.logger.Debug().Err(proto.ErrCommandNotSupported).Msg("request command not supported")
-		_, err = conn.Write(newRequestReply(proto.RepCommandNotSupported, req.ATyp, nil).Bytes())
+		_, err = conn.Write(s.reply(proto.RepCommandNotSupported, nil).Bytes())
 		if err != nil {
 			s.logger.Err(err).Msg("write reply failed")
 		}
 		return
 	}
 
-	if req.ATyp != proto.ATypIPv4 &&
-		req.ATyp != proto.ATypIPv6 &&
-		req.ATyp != proto.ATypDomain {
+	if req.ATyp != proto.ATypIPv4 && req.ATyp != proto.ATypIPv6 && req.ATyp != proto.ATypDomain {
 		s.logger.Debug().Err(proto.ErrATypNotSupported).Msg("request address type not supported")
-		_, err = conn.Write(newRequestReply(proto.RepCommandNotSupported, req.ATyp, nil).Bytes())
+		_, err = conn.Write(s.reply(proto.RepCommandNotSupported, nil).Bytes())
 		if err != nil {
 			s.logger.Err(err).Msg("write reply failed")
 		}
@@ -155,18 +156,30 @@ func (s *Server) handleConn(conn net.Conn) {
 	s.handleRequest(conn, req)
 }
 
-func (s *Server) handleRequest(conn net.Conn, req *Request) {
-	remoteAddr := req.Address()
-
+func (s *Server) handleRequest(conn net.Conn, req *proto.Request) {
 	switch req.Cmd {
 	case proto.CmdConnect:
-		s.handleConnect(conn, remoteAddr)
+		s.handleCmdConnect(conn, req.Destination())
 	default:
-		_, err := conn.Write(newRequestReply(proto.RepCommandNotSupported, req.ATyp, nil).Bytes())
+		_, err := conn.Write(s.reply(proto.RepCommandNotSupported, nil).Bytes())
 		if err != nil {
 			s.logger.Err(err).Msg("write reply failed")
 			return
 		}
+	}
+}
+
+// aTyp return the type of server bind address
+func (s *Server) aTyp() byte {
+	serverAddr, _, _ := net.SplitHostPort(s.addr.String())
+	if ip := net.ParseIP(serverAddr); ip != nil {
+		if ip.To4() != nil {
+			return proto.ATypIPv4
+		} else {
+			return proto.ATypIPv6
+		}
+	} else {
+		return proto.ATypDomain
 	}
 }
 
